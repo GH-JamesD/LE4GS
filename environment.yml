@@ -4,6 +4,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - open-clip-torch
   - cudatoolkit=11.6
   - plyfile=0.8.1
   - python=3.7.13
@@ -12,6 +13,12 @@ dependencies:
   - torchaudio=0.12.1
   - torchvision=0.13.1
   - colmap
+  - opencv
+  - tensorboard
+  - jaxtyping
+  - matplotlib
+  - typing
+  - pathlib
   - pip:
     - tqdm==4.66.1
     - torchmetrics==0.11.4
@@ -20,4 +27,7 @@ dependencies:
     - omegaconf==2.3.0
     - ./simple-knn
     - ./pointops2
+    - submodules/segment-anything-langsplat
+    - submodules/langsplat-rasterization
+    - submodules/simple-knn
     
