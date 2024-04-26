@@ -1,4 +1,4 @@
-name: 4d_gaussian_splatting
+name: le4gs
 channels:
   - pytorch
   - conda-forge
