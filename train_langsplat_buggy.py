@@ -139,167 +139,166 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gt_image = gt_image.cuda()
             viewpoint_cam = viewpoint_cam.cuda()
 
-                render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-                image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-                depth = render_pkg["depth"]
-                alpha = render_pkg["alpha"]
-        
-        # Loss
-        # if opt.include_feature:
-        #     gt_language_feature, language_feature_mask = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level)
-        #     Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)            
-        #     loss = Ll1
-        # else:
-        #     gt_image = viewpoint_cam.original_image.cuda()
-                Ll1 = l1_loss(image, gt_image)
-                # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-                Lssim = 1.0 - ssim(image, gt_image)
-                loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * Lssim
-                
-                ###### opa mask Loss ######
-                if opt.lambda_opa_mask > 0:
-                    o = alpha.clamp(1e-6, 1-1e-6)
-                    sky = 1 - viewpoint_cam.gt_alpha_mask
+            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+            image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+            depth = render_pkg["depth"]
+            alpha = render_pkg["alpha"]
+    
+    # Loss
+    # if opt.include_feature:
+    #     gt_language_feature, language_feature_mask = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level)
+    #     Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)            
+    #     loss = Ll1
+    # else:
+    #     gt_image = viewpoint_cam.original_image.cuda()
+            Ll1 = l1_loss(image, gt_image)
+            # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+            Lssim = 1.0 - ssim(image, gt_image)
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * Lssim
+            
+            ###### opa mask Loss ######
+            if opt.lambda_opa_mask > 0:
+                o = alpha.clamp(1e-6, 1-1e-6)
+                sky = 1 - viewpoint_cam.gt_alpha_mask
 
-                    Lopa_mask = (- sky * torch.log(1 - o)).mean()
+                Lopa_mask = (- sky * torch.log(1 - o)).mean()
 
-                    # lambda_opa_mask = opt.lambda_opa_mask * (1 - 0.99 * min(1, iteration/opt.iterations))
-                    lambda_opa_mask = opt.lambda_opa_mask
-                    loss = loss + lambda_opa_mask * Lopa_mask
-                ###### opa mask Loss ######
+                # lambda_opa_mask = opt.lambda_opa_mask * (1 - 0.99 * min(1, iteration/opt.iterations))
+                lambda_opa_mask = opt.lambda_opa_mask
+                loss = loss + lambda_opa_mask * Lopa_mask
+            ###### opa mask Loss ######
+            
+            ###### rigid loss ######
+            if opt.lambda_rigid > 0:
+                k = 20
+                # cur_time = viewpoint_cam.timestamp
+                # _, delta_mean = gaussians.get_current_covariance_and_mean_offset(1.0, cur_time)
+                xyz_mean = gaussians.get_xyz
+                xyz_cur =  xyz_mean #  + delta_mean
+                idx, dist = knn(xyz_cur[None].contiguous().detach(), 
+                                xyz_cur[None].contiguous().detach(), 
+                                k)
+                _, velocity = gaussians.get_current_covariance_and_mean_offset(1.0, gaussians.get_t + 0.1)
+                weight = torch.exp(-100 * dist)
+                # cur_marginal_t = gaussians.get_marginal_t(cur_time).detach().squeeze(-1)
+                # marginal_weights = cur_marginal_t[idx] * cur_marginal_t[None,:,None]
+                # weight *= marginal_weights
                 
-                ###### rigid loss ######
-                if opt.lambda_rigid > 0:
-                    k = 20
-                    # cur_time = viewpoint_cam.timestamp
-                    # _, delta_mean = gaussians.get_current_covariance_and_mean_offset(1.0, cur_time)
-                    xyz_mean = gaussians.get_xyz
-                    xyz_cur =  xyz_mean #  + delta_mean
-                    idx, dist = knn(xyz_cur[None].contiguous().detach(), 
-                                    xyz_cur[None].contiguous().detach(), 
-                                    k)
-                    _, velocity = gaussians.get_current_covariance_and_mean_offset(1.0, gaussians.get_t + 0.1)
-                    weight = torch.exp(-100 * dist)
-                    # cur_marginal_t = gaussians.get_marginal_t(cur_time).detach().squeeze(-1)
-                    # marginal_weights = cur_marginal_t[idx] * cur_marginal_t[None,:,None]
-                    # weight *= marginal_weights
+                # mean_t, cov_t = gaussians.get_t, gaussians.get_cov_t(scaling_modifier=1)
+                # mean_t_nn, cov_t_nn = mean_t[idx], cov_t[idx]
+                # weight *= torch.exp(-0.5*(mean_t[None, :, None]-mean_t_nn)**2/cov_t[None, :, None]/cov_t_nn*(cov_t[None, :, None]+cov_t_nn)).squeeze(-1).detach()
+                vel_dist = torch.norm(velocity[idx] - velocity[None, :, None], p=2, dim=-1)
+                Lrigid = (weight * vel_dist).sum() / k / xyz_cur.shape[0]
+                loss = loss + opt.lambda_rigid * Lrigid
+            ########################
+            
+            ###### motion loss ######
+            if opt.lambda_motion > 0:
+                _, velocity = gaussians.get_current_covariance_and_mean_offset(1.0, gaussians.get_t + 0.1)
+                Lmotion = velocity.norm(p=2, dim=1).mean()
+                loss = loss + opt.lambda_motion * Lmotion
+            ########################
+
+            loss = loss / batch_size
+            loss.backward()
+            batch_point_grad.append(torch.norm(viewspace_point_tensor.grad[:,:2], dim=-1))
+            batch_radii.append(radii)
+            batch_visibility_filter.append(visibility_filter)
+
+        if batch_size > 1:
+            visibility_count = torch.stack(batch_visibility_filter,1).sum(1)
+            visibility_filter = visibility_count > 0
+            radii = torch.stack(batch_radii,1).max(1)[0]
+            
+            batch_viewspace_point_grad = torch.stack(batch_point_grad,1).sum(1)
+            batch_viewspace_point_grad[visibility_filter] = batch_viewspace_point_grad[visibility_filter] * batch_size / visibility_count[visibility_filter]
+            batch_viewspace_point_grad = batch_viewspace_point_grad.unsqueeze(1)
+            
+            if gaussians.gaussian_dim == 4:
+                batch_t_grad = gaussians._t.grad.clone()[:,0].detach()
+                batch_t_grad[visibility_filter] = batch_t_grad[visibility_filter] * batch_size / visibility_count[visibility_filter]
+                batch_t_grad = batch_t_grad.unsqueeze(1)
+        else:
+            if gaussians.gaussian_dim == 4:
+                batch_t_grad = gaussians._t.grad.clone().detach()
+
+        iter_end.record()
+        loss_dict = {"Ll1": Ll1,
+                    "Lssim": Lssim}
+
+        with torch.no_grad():
+            psnr_for_log = psnr(image, gt_image).mean().double()
+            # Progress bar
+            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            ema_l1loss_for_log = 0.4 * Ll1.item() + 0.6 * ema_l1loss_for_log
+            ema_ssimloss_for_log = 0.4 * Lssim.item() + 0.6 * ema_ssimloss_for_log
+            
+            for lambda_name in lambda_all:
+                if opt.__dict__[lambda_name] > 0:
+                    ema = vars()[f"ema_{lambda_name.replace('lambda_', '')}_for_log"]
+                    vars()[f"ema_{lambda_name.replace('lambda_', '')}_for_log"] = 0.4 * vars()[f"L{lambda_name.replace('lambda_', '')}"].item() + 0.6*ema
+                    loss_dict[lambda_name.replace("lambda_", "L")] = vars()[lambda_name.replace("lambda_", "L")]
+
+            if iteration % 10 == 0:
+                # progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+                postfix = {"Loss": f"{ema_loss_for_log:.{7}f}",
+                                            "PSNR": f"{psnr_for_log:.{2}f}",
+                                            "Ll1": f"{ema_l1loss_for_log:.{4}f}",
+                                            "Lssim": f"{ema_ssimloss_for_log:.{4}f}",}
                     
-                    # mean_t, cov_t = gaussians.get_t, gaussians.get_cov_t(scaling_modifier=1)
-                    # mean_t_nn, cov_t_nn = mean_t[idx], cov_t[idx]
-                    # weight *= torch.exp(-0.5*(mean_t[None, :, None]-mean_t_nn)**2/cov_t[None, :, None]/cov_t_nn*(cov_t[None, :, None]+cov_t_nn)).squeeze(-1).detach()
-                    vel_dist = torch.norm(velocity[idx] - velocity[None, :, None], p=2, dim=-1)
-                    Lrigid = (weight * vel_dist).sum() / k / xyz_cur.shape[0]
-                    loss = loss + opt.lambda_rigid * Lrigid
-                ########################
-                
-                ###### motion loss ######
-                if opt.lambda_motion > 0:
-                    _, velocity = gaussians.get_current_covariance_and_mean_offset(1.0, gaussians.get_t + 0.1)
-                    Lmotion = velocity.norm(p=2, dim=1).mean()
-                    loss = loss + opt.lambda_motion * Lmotion
-                ########################
-
-                loss = loss / batch_size
-                loss.backward()
-                batch_point_grad.append(torch.norm(viewspace_point_tensor.grad[:,:2], dim=-1))
-                batch_radii.append(radii)
-                batch_visibility_filter.append(visibility_filter)
-
-            if batch_size > 1:
-                visibility_count = torch.stack(batch_visibility_filter,1).sum(1)
-                visibility_filter = visibility_count > 0
-                radii = torch.stack(batch_radii,1).max(1)[0]
-                
-                batch_viewspace_point_grad = torch.stack(batch_point_grad,1).sum(1)
-                batch_viewspace_point_grad[visibility_filter] = batch_viewspace_point_grad[visibility_filter] * batch_size / visibility_count[visibility_filter]
-                batch_viewspace_point_grad = batch_viewspace_point_grad.unsqueeze(1)
-                
-                if gaussians.gaussian_dim == 4:
-                    batch_t_grad = gaussians._t.grad.clone()[:,0].detach()
-                    batch_t_grad[visibility_filter] = batch_t_grad[visibility_filter] * batch_size / visibility_count[visibility_filter]
-                    batch_t_grad = batch_t_grad.unsqueeze(1)
-            else:
-                if gaussians.gaussian_dim == 4:
-                    batch_t_grad = gaussians._t.grad.clone().detach()
-
-            iter_end.record()
-            loss_dict = {"Ll1": Ll1,
-                        "Lssim": Lssim}
-
-            with torch.no_grad():
-                psnr_for_log = psnr(image, gt_image).mean().double()
-                # Progress bar
-                ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-                ema_l1loss_for_log = 0.4 * Ll1.item() + 0.6 * ema_l1loss_for_log
-                ema_ssimloss_for_log = 0.4 * Lssim.item() + 0.6 * ema_ssimloss_for_log
-                
                 for lambda_name in lambda_all:
                     if opt.__dict__[lambda_name] > 0:
-                        ema = vars()[f"ema_{lambda_name.replace('lambda_', '')}_for_log"]
-                        vars()[f"ema_{lambda_name.replace('lambda_', '')}_for_log"] = 0.4 * vars()[f"L{lambda_name.replace('lambda_', '')}"].item() + 0.6*ema
-                        loss_dict[lambda_name.replace("lambda_", "L")] = vars()[lambda_name.replace("lambda_", "L")]
-
-                if iteration % 10 == 0:
-                    # progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
-                    postfix = {"Loss": f"{ema_loss_for_log:.{7}f}",
-                                                "PSNR": f"{psnr_for_log:.{2}f}",
-                                                "Ll1": f"{ema_l1loss_for_log:.{4}f}",
-                                                "Lssim": f"{ema_ssimloss_for_log:.{4}f}",}
+                        ema_loss = vars()[f"ema_{lambda_name.replace('lambda_', '')}_for_log"]
+                        postfix[lambda_name.replace("lambda_", "L")] = f"{ema_loss:.{4}f}"
                         
-                    for lambda_name in lambda_all:
-                        if opt.__dict__[lambda_name] > 0:
-                            ema_loss = vars()[f"ema_{lambda_name.replace('lambda_', '')}_for_log"]
-                            postfix[lambda_name.replace("lambda_", "L")] = f"{ema_loss:.{4}f}"
-                            
-                    progress_bar.set_postfix(postfix)
-                    progress_bar.update(10)
-                if iteration == opt.iterations:
-                    progress_bar.close()
+                progress_bar.set_postfix(postfix)
+                progress_bar.update(10)
+            if iteration == opt.iterations:
+                progress_bar.close()
 
-                # Log and save
-                # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, opt))
-                test_psnr = training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background), loss_dict)
-                if (iteration in testing_iterations):
-                    if test_psnr >= best_psnr:
-                        best_psnr = test_psnr
-                        print("\n[ITER {}] Saving best checkpoint".format(iteration))
-                        torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt_best.pth")
+            # Log and save
+            # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, opt))
+            test_psnr = training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background), loss_dict)
+            if (iteration in testing_iterations):
+                if test_psnr >= best_psnr:
+                    best_psnr = test_psnr
+                    print("\n[ITER {}] Saving best checkpoint".format(iteration))
+                    torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt_best.pth")
+            if (iteration in saving_iterations):
+                print("\n[ITER {}] Saving Gaussians".format(iteration))
+                scene.save(iteration)
 
-                if (iteration in saving_iterations):
-                    print("\n[ITER {}] Saving Gaussians".format(iteration))
-                    scene.save(iteration)
+            # Densification
+            # if not opt.include_feature:
+            #     if iteration < opt.densify_until_iter:
+            if iteration < opt.densify_until_iter and (opt.densify_until_num_points < 0 or gaussians.get_xyz.shape[0] < opt.densify_until_num_points):
+                # Keep track of max radii in image-space for pruning
+                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
+                # gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                if batch_size == 1:
+                    gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter, batch_t_grad if gaussians.gaussian_dim == 4 else None)
+                else:
+                    gaussians.add_densification_stats_grad(batch_viewspace_point_grad, visibility_filter, batch_t_grad if gaussians.gaussian_dim == 4 else None)
 
-                # Densification
-                # if not opt.include_feature:
-                #     if iteration < opt.densify_until_iter:
-                if iteration < opt.densify_until_iter and (opt.densify_until_num_points < 0 or gaussians.get_xyz.shape[0] < opt.densify_until_num_points):
-                    # Keep track of max radii in image-space for pruning
-                    gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-                    # gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
-                    if batch_size == 1:
-                        gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter, batch_t_grad if gaussians.gaussian_dim == 4 else None)
-                    else:
-                        gaussians.add_densification_stats_grad(batch_viewspace_point_grad, visibility_filter, batch_t_grad if gaussians.gaussian_dim == 4 else None)
+                if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                    size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                    # gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, opt.thresh_opa_prune, scene.cameras_extent, size_threshold, opt.densify_grad_t_threshold)
+                
+                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                    gaussians.reset_opacity()
 
-                    if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                        # gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, opt.thresh_opa_prune, scene.cameras_extent, size_threshold, opt.densify_grad_t_threshold)
-                    
-                    if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                        gaussians.reset_opacity()
+            # Optimizer step
+            if iteration < opt.iterations:
+                gaussians.optimizer.step()
+                gaussians.optimizer.zero_grad(set_to_none = True)
+                if pipe.env_map_res and iteration < pipe.env_optimize_until:
+                        env_map_optimizer.step()
+                        env_map_optimizer.zero_grad(set_to_none = True)
 
-                # Optimizer step
-                if iteration < opt.iterations:
-                    gaussians.optimizer.step()
-                    gaussians.optimizer.zero_grad(set_to_none = True)
-                    if pipe.env_map_res and iteration < pipe.env_optimize_until:
-                            env_map_optimizer.step()
-                            env_map_optimizer.zero_grad(set_to_none = True)
-
-            # if (iteration in checkpoint_iterations):
-            #     print("\n[ITER {}] Saving Checkpoint".format(iteration))
-            #     torch.save((gaussians.capture(opt.include_feature), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+        # if (iteration in checkpoint_iterations):
+        #     print("\n[ITER {}] Saving Checkpoint".format(iteration))
+        #     torch.save((gaussians.capture(opt.include_feature), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
             
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -464,7 +463,6 @@ if __name__ == "__main__":
         args.test_iterations = args.test_iterations + [i for i in range(0,op.iterations,500)]
     
     setup_seed(args.seed)
-    
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
