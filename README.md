@@ -83,3 +83,11 @@ https://github.com/fudan-zvg/4d-gaussian-splatting/assets/45744267/2c79974c-1867
   year={2024}
 }
 ```
+### Notes for Karim 
+-change the python version to 3.8.17 in yml file
+-run the env.yml file
+-activate the thing
+-run this thing: pip install torch==2.0.0 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
+-update render.py and scene/ with this gh link: https://github.com/fudan-zvg/4d-gaussian-splatting/issues/12
+-download the dnerf dataset and make the folder data/dnerf
+-then you gotta run the training and just fix pip errors as they come along
