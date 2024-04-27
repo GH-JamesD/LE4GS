@@ -7,11 +7,15 @@ dependencies:
   - open-clip-torch
   - cudatoolkit=11.6
   - plyfile=0.8.1
-  - python=3.7.13
+  - python 3.8.17
   - pip=22.3.1
-  - pytorch=1.12.1
-  - torchaudio=0.12.1
-  - torchvision=0.13.1
+  # - pytorch=1.12.1
+  # - torchaudio=0.12.1
+  # - torchvision=0.13.1
+
+  # - pytorch==2.0.0 
+  # - torchvision==0.15.1 
+  # - torchaudio==2.0.1
   - colmap
   - opencv
   - tensorboard
@@ -28,6 +32,7 @@ dependencies:
     - ./simple-knn
     - ./pointops2
     - submodules/segment-anything-langsplat
-    - submodules/langsplat-rasterization
-    - submodules/simple-knn
+    # this just breaks on my version
+    # - submodules/diff-gaussian-rasterization
+    # - submodules/simple-knn
     
