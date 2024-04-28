@@ -9,6 +9,7 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import os
 import torch
 from torch import nn
 import numpy as np

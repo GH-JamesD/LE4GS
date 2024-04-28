@@ -129,14 +129,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 image, language_feature, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["language_feature_image"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
                 depth = render_pkg["depth"]
                 alpha = render_pkg["alpha"]
-
+    
                 # Loss
                 if opt.include_feature: #NOTE whole if-else block is 
                     gt_language_feature, language_feature_mask = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level)
+                    breakpoint()
                     Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)            
                     loss = Ll1
                 else:
-                    gt_image = viewpoint_cam.original_image.cuda()
+                    # gt_image = image #viewpoint_cam.original_image.cuda()
                     Ll1 = l1_loss(image, gt_image)
                 Lssim = 1.0 - ssim(image, gt_image)
                 loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * Lssim
@@ -210,7 +211,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             iter_end.record()
             loss_dict = {"Ll1": Ll1,
                         "Lssim": Lssim}
-
+            
             with torch.no_grad():
                 psnr_for_log = psnr(image, gt_image).mean().double()
                 # Progress bar
