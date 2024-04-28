@@ -16,7 +16,7 @@ from .diff_gaussian_rasterization import GaussianRasterizationSettings, Gaussian
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh, eval_shfs_4d
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, opt, scaling_modifier = 1.0, override_color = None):
     """
     Render the scene. 
     
@@ -52,7 +52,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         gaussian_dim=pc.gaussian_dim,
         force_sh_3d=pc.force_sh_3d,
         prefiltered=False,
-        debug=pipe.debug
+        debug=pipe.debug,
+        include_feature=opt.include_feature,
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -113,7 +114,13 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                 ts = pc.get_t
     else:
         colors_precomp = override_color
-    
+
+    if opt.include_feature:
+        language_feature_precomp = pc.get_language_feature
+        language_feature_precomp = language_feature_precomp/ (language_feature_precomp.norm(dim=-1, keepdim=True) + 1e-9)
+        # language_feature_precomp = torch.sigmoid(language_feature_precomp)
+    else:
+        language_feature_precomp = torch.zeros((1,), dtype=opacity.dtype, device=opacity.device)
     flow_2d = torch.zeros_like(pc.get_xyz[:,:2])
     
     # Prefilter
@@ -145,12 +152,13 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             flow_2d = flow_2d[mask]
     
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, radii, depth, alpha, flow, covs_com = rasterizer(
+    rendered_image, language_feature_image, radii, depth, alpha, flow, covs_com = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
         colors_precomp = colors_precomp,
         flow_2d = flow_2d,
+        language_feature_precomp = language_feature_precomp,
         opacities = opacity,
         ts = ts,
         scales = scales,
@@ -183,6 +191,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {"render": rendered_image,
+            "language_feature_image": language_feature_image,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii_all > 0,
             "radii": radii_all,
