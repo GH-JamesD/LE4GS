@@ -190,6 +190,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 batch_point_grad.append(torch.norm(viewspace_point_tensor.grad[:,:2], dim=-1))
                 batch_radii.append(radii)
                 batch_visibility_filter.append(visibility_filter)
+            torch.cuda.empty_cache()
 
             if batch_size > 1:
                 visibility_count = torch.stack(batch_visibility_filter,1).sum(1)
@@ -332,7 +333,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     # Report test and samples of training set
     if iteration in testing_iterations:
         print(f'testing for iter {iteration}')
-        torch.cuda.empty_cache() #NOTE langsplat change
+        # torch.cuda.empty_cache() #NOTE langsplat change
         validation_configs = ({'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]},
                               {'name': 'test', 'cameras' : [scene.getTestCameras()[idx] for idx in range(len(scene.getTestCameras()))]})
 
