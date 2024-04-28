@@ -286,7 +286,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  include_feature);
   }
 
-  return std::make_tuple(dL_dmeans2D, dL_dcolors, dL_dopacity, dL_dmeans3D, dL_dcov3D,
+  return std::make_tuple(dL_dmeans2D, dL_dcolors, dL_dlanguage_feature, dL_dopacity, dL_dmeans3D, dL_dcov3D,
         dL_dsh, dL_dflows, dL_dts, dL_dscales, dL_dscales_t, dL_drotations, dL_drotations_r);
 }
 
