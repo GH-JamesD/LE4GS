@@ -48,7 +48,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     if opt.include_feature:
         if not checkpoint:
-            raise ValueError("checkpoint missing!!!!!")
+            # raise ValueError("checkpoint missing!!!!!")
+            print("checkpoint missing!!!!!")
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         if len(model_params) == 12 and opt.include_feature:
@@ -114,8 +115,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Render
             if (iteration - 1) == debug_from:
                 pipe.debug = True
-            render_pkg = render(viewpoint_cam, gaussians, pipe, background, opt)
-            image, language_feature, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["language_feature_image"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
             batch_point_grad = []
             batch_visibility_filter = []
             batch_radii = []
@@ -125,8 +124,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gt_image = gt_image.cuda()
                 viewpoint_cam = viewpoint_cam.cuda()
 
-                render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-                image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+                render_pkg = render(viewpoint_cam, gaussians, pipe, background, opt)
+                # image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+                image, language_feature, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["language_feature_image"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
                 depth = render_pkg["depth"]
                 alpha = render_pkg["alpha"]
 
@@ -447,3 +447,8 @@ if __name__ == "__main__":
 
     # All done
     print("\nTraining complete.")
+
+    # script I run for training initially
+    # python train.py --config configs/dnerf/bouncingballs.yaml
+    # script I try to run for the full thing:
+    # python train.py --config configs/dnerf/bouncingballs.yaml -s data_langsplat/dnerf/bouncingballs/ -m output/bouncingballs --start_checkpoint output/dnerf/bouncingballs/chkpnt7000.pth --feature_level 1
