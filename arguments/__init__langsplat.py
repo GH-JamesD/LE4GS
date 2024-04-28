@@ -48,7 +48,7 @@ class ModelParams(ParamGroup):
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
         self._source_path = ""
-        self._model_path = ""
+        self._model_path = "" 
         self._language_features_name = "language_features_dim3"
         self._images = "images"
         self._resolution = -1
@@ -56,11 +56,6 @@ class ModelParams(ParamGroup):
         self._feature_level = -1
         self.data_device = "cuda"
         self.eval = False
-        self.extension = ".png"
-        self.num_extra_pts = 0
-        self.loaded_pth = ""
-        self.frame_ratio = 1
-        self.dataloader = False
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -74,17 +69,12 @@ class PipelineParams(ParamGroup):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
-        self.env_map_res = 0
-        self.env_optimize_until = 1000000000
-        self.env_optimize_from = 0
-        self.eval_shfs_4d = False
         super().__init__(parser, "Pipeline Parameters")
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
         self.iterations = 30_000
         self.position_lr_init = 0.00016
-        self.position_t_lr_init = -1.0
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
         self.position_lr_max_steps = 30_000
@@ -96,19 +86,11 @@ class OptimizationParams(ParamGroup):
         self.rotation_lr = 0.001
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
-        self.thresh_opa_prune = 0.005
         self.densification_interval = 100
         self.opacity_reset_interval = 3000
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
-        self.densify_grad_t_threshold = 0.0002 / 40
-        self.densify_until_num_points = -1
-        self.final_prune_from_iter = -1
-        self.sh_increase_interval = 1000
-        self.lambda_opa_mask = 0.0
-        self.lambda_rigid = 0.0
-        self.lambda_motion = 0.0
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
