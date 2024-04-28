@@ -21,14 +21,11 @@
 namespace FORWARD
 {
 	// Perform initial steps for each Gaussian prior to rasterization.
-	void preprocess(int P, int D, int D_t, int M,
+	void preprocess(int P, int D, int M,
 		const float* orig_points,
-		const float* ts,
 		const glm::vec3* scales,
-		const float* scales_t,
 		const float scale_modifier,
 		const glm::vec4* rotations,
-		const glm::vec4* rotations_r,
 		const float* opacities,
 		const float* shs,
 		bool* clamped,
@@ -37,9 +34,6 @@ namespace FORWARD
 		const float* viewmatrix,
 		const float* projmatrix,
 		const glm::vec3* cam_pos,
-		const float timestamp,
-		const float time_duration,
-		const bool rot_4d, const int gaussian_dim, const bool force_sh_3d,
 		const int W, int H,
 		const float focal_x, float focal_y,
 		const float tan_fovx, float tan_fovy,
@@ -62,15 +56,11 @@ namespace FORWARD
 		const float2* points_xy_image,
 		const float* features,
 		const float* language_feature,
-		const float* flows,
-		const float* depths,
 		const float4* conic_opacity,
 		float* final_T,
 		uint32_t* n_contrib,
 		const float* bg_color,
 		float* out_color,
-		float* out_flow,
-		float* out_depth,
 		float* out_language_feature,
 		bool include_feature);
 }
