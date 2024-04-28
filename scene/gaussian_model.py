@@ -69,6 +69,7 @@ class GaussianModel:
         self._scaling = torch.empty(0)
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
+        self._language_feature = None
         self.max_radii2D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
@@ -93,8 +94,8 @@ class GaussianModel:
         
         self.setup_functions()
 
-    def capture(self):
-        if self.gaussian_dim == 3:
+    def capture(self, include_feature=False):
+        if self.gaussian_dim == 3 and not include_feature:
             return (
                 self.active_sh_degree,
                 self._xyz,
@@ -109,7 +110,7 @@ class GaussianModel:
                 self.optimizer.state_dict(),
                 self.spatial_lr_scale,
             )
-        elif self.gaussian_dim == 4:
+        elif self.gaussian_dim == 4 and not include_feature:
             return (
                 self.active_sh_degree,
                 self._xyz,
@@ -131,6 +132,47 @@ class GaussianModel:
                 self.env_map,
                 self.active_sh_degree_t
             )
+        elif self.gaussian_dim == 3 and include_feature:
+            assert self._language_feature is not None, "missing language feature"
+            return (
+                self.active_sh_degree,
+                self._xyz,
+                self._features_dc,
+                self._features_rest,
+                self._scaling,
+                self._rotation,
+                self._opacity,
+                self.max_radii2D,
+                self.xyz_gradient_accum,
+                self.denom,
+                self.optimizer.state_dict(),
+                self.spatial_lr_scale,
+                self._language_feature
+            )
+        elif self.gaussian_dim == 4 and include_feature:
+            assert self._language_feature is not None, "missing language feature"
+            return (
+                self.active_sh_degree,
+                self._xyz,
+                self._features_dc,
+                self._features_rest,
+                self._scaling,
+                self._rotation,
+                self._opacity,
+                self.max_radii2D,
+                self.xyz_gradient_accum,
+                self.t_gradient_accum,
+                self.denom,
+                self.optimizer.state_dict(),
+                self.spatial_lr_scale,
+                self._t,
+                self._scaling_t,
+                self._rotation_r,
+                self.rot_4d,
+                self.env_map,
+                self.active_sh_degree_t,
+                self._language_feature
+            )
     
     def restore(self, model_args, training_args):
         if self.gaussian_dim == 3:
@@ -141,6 +183,7 @@ class GaussianModel:
             self._scaling, 
             self._rotation, 
             self._opacity,
+            self._language_feature,
             self.max_radii2D, 
             xyz_gradient_accum, 
             denom,
@@ -154,6 +197,7 @@ class GaussianModel:
             self._scaling, 
             self._rotation, 
             self._opacity,
+            self._language_feature,
             self.max_radii2D, 
             xyz_gradient_accum, 
             t_gradient_accum,
@@ -172,6 +216,14 @@ class GaussianModel:
             self.t_gradient_accum = t_gradient_accum
             self.denom = denom
             self.optimizer.load_state_dict(opt_dict)
+
+
+    @property
+    def get_language_feature(self):
+        if self._language_feature is not None:
+            return self._language_feature
+        else:
+            raise ValueError('missing language feature')
 
     @property
     def get_scaling(self):
@@ -328,22 +380,45 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
 
-        l = [
-            {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
-            {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
-            {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
-            {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
-            {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
-        ]
-        if self.gaussian_dim == 4: # TODO: tune time_lr_scale
-            if training_args.position_t_lr_init < 0:
-                training_args.position_t_lr_init = training_args.position_lr_init
-            self.t_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-            l.append({'params': [self._t], 'lr': training_args.position_t_lr_init * self.spatial_lr_scale, "name": "t"})
-            l.append({'params': [self._scaling_t], 'lr': training_args.scaling_lr, "name": "scaling_t"})
-            if self.rot_4d:
-                l.append({'params': [self._rotation_r], 'lr': training_args.rotation_lr, "name": "rotation_r"})
+        if training_args.include_feature:
+            if self._language_feature is None or self._language_feature.shape[0] != self._xyz.shape[0]:
+                language_feature = torch.zeros((self._xyz.shape[0], 3), device="cuda")
+                self._language_feature = nn.Parameter(language_feature.requires_grad_(True))
+
+            l = [
+                {'params': [self._language_feature], 'lr': training_args.language_feature_lr, "name": "language_feature"}, # TODO: training_args.language_feature_lr
+            ]
+            self._xyz.requires_grad_(False)
+            self._features_dc.requires_grad_(False)
+            self._features_rest.requires_grad_(False)
+            self._scaling.requires_grad_(False)
+            self._rotation.requires_grad_(False)
+            self._opacity.requires_grad_(False)
+
+            if self.gaussian_dim == 4:
+                self._t.requires_grad_(False)
+                self._scaling_t.requires_grad_(False)
+                if self.rot_4d:
+                    self._rotation_r.requires_grad_(False)
+
+        else:
+            l = [
+                {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+                {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
+                {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
+                {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
+                {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
+                {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
+            ]
+            assert self._language_feature is None, "language feature should be None"
+            if self.gaussian_dim == 4: # TODO: tune time_lr_scale
+                if training_args.position_t_lr_init < 0:
+                    training_args.position_t_lr_init = training_args.position_lr_init
+                self.t_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+                l.append({'params': [self._t], 'lr': training_args.position_t_lr_init * self.spatial_lr_scale, "name": "t"})
+                l.append({'params': [self._scaling_t], 'lr': training_args.scaling_lr, "name": "scaling_t"})
+                if self.rot_4d:
+                    l.append({'params': [self._rotation_r], 'lr': training_args.rotation_lr, "name": "rotation_r"})
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
