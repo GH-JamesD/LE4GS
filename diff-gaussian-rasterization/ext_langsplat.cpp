@@ -9,12 +9,11 @@
  * For inquiries contact  george.drettakis@inria.fr
  */
 
-#ifndef CUDA_RASTERIZER_CONFIG_H_INCLUDED
-#define CUDA_RASTERIZER_CONFIG_H_INCLUDED
+#include <torch/extension.h>
+#include "rasterize_points.h"
 
-#define NUM_CHANNELS 3 // Default 3, RGB
-#define NUM_CHANNELS_language_feature 3 // CLIP_feature
-#define BLOCK_X 16
-#define BLOCK_Y 16
-
-#endif
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("rasterize_gaussians", &RasterizeGaussiansCUDA);
+  m.def("rasterize_gaussians_backward", &RasterizeGaussiansBackwardCUDA);
+  m.def("mark_visible", &markVisible);
+}

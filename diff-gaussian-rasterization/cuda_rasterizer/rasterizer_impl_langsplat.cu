@@ -62,8 +62,7 @@ __global__ void checkFrustum(int P,
 		return;
 
 	float3 p_view;
-	float3 orig_point={orig_points[3*idx],orig_points[3*idx+1],orig_points[3*idx+2]};
-	present[idx] = in_frustum(orig_point, viewmatrix, projmatrix, false, p_view);
+	present[idx] = in_frustum(idx, orig_points, viewmatrix, projmatrix, false, p_view);
 }
 
 // Generates one key/value pair for all Gaussian / tile overlaps. 
@@ -200,35 +199,25 @@ int CudaRasterizer::Rasterizer::forward(
 	std::function<char* (size_t)> geometryBuffer,
 	std::function<char* (size_t)> binningBuffer,
 	std::function<char* (size_t)> imageBuffer,
-	const int P, int D, int D_t, int M,
+	const int P, int D, int M,
 	const float* background,
 	const int width, int height,
 	const float* means3D,
 	const float* shs,
 	const float* colors_precomp,
 	const float* language_feature_precomp, // 增加了参数
-	const float* flows_precomp,
 	const float* opacities,
-	const float* ts,
 	const float* scales,
-	const float* scales_t,
 	const float scale_modifier,
 	const float* rotations,
-	const float* rotations_r,
 	const float* cov3D_precomp,
 	const float* viewmatrix,
 	const float* projmatrix,
 	const float* cam_pos,
-	const float timestamp,
-	const float time_duration,
-	const bool rot_4d, const int gaussian_dim, const bool force_sh_3d,
 	const float tan_fovx, float tan_fovy,
 	const bool prefiltered,
 	float* out_color,
 	float* out_language_feature,
-	float* out_flow,
-	float* out_depth,
-	float* out_T,
 	int* radii,
 	bool debug,
 	bool include_feature)
@@ -260,14 +249,11 @@ int CudaRasterizer::Rasterizer::forward(
 
 	// Run preprocessing per-Gaussian (transformation, bounding, conversion of SHs to RGB)
 	CHECK_CUDA(FORWARD::preprocess(
-		P, D, D_t, M,
+		P, D, M,
 		means3D,
-		ts,
 		(glm::vec3*)scales,
-		scales_t,
 		scale_modifier,
 		(glm::vec4*)rotations,
-		(glm::vec4*)rotations_r,
 		opacities,
 		shs,
 		geomState.clamped,
@@ -275,9 +261,6 @@ int CudaRasterizer::Rasterizer::forward(
 		colors_precomp,
 		viewmatrix, projmatrix,
 		(glm::vec3*)cam_pos,
-		timestamp,
-		time_duration,
-		rot_4d, gaussian_dim, force_sh_3d,
 		width, height,
 		focal_x, focal_y,
 		tan_fovx, tan_fovy,
@@ -317,8 +300,7 @@ int CudaRasterizer::Rasterizer::forward(
 		tile_grid)
 	CHECK_CUDA(, debug)
 
-	// int bit = getHigherMsb(tile_grid.x * tile_grid.y);
-	int bit = 32;
+	int bit = getHigherMsb(tile_grid.x * tile_grid.y);
 
 	// Sort complete list of (duplicated) Gaussian indices by keys
 	CHECK_CUDA(cub::DeviceRadixSort::SortPairs(
@@ -336,12 +318,18 @@ int CudaRasterizer::Rasterizer::forward(
 			num_rendered,
 			binningState.point_list_keys,
 			imgState.ranges);
-	CHECK_CUDA(, debug)
+	// CHECK_CUDA(, debug)
 
 	// Let each tile blend its range of Gaussians independently in parallel
 	const float* feature_ptr = colors_precomp != nullptr ? colors_precomp : geomState.rgb;
 	const float* language_feature_ptr = language_feature_precomp;
-	const float* flow_ptr = flows_precomp;
+	
+	
+	// cudaEvent_t start, stop; //事件对象
+	// cudaEventCreate(&start);
+	// cudaEventCreate(&stop);
+	// cudaEventRecord(start, stream); 
+
 	CHECK_CUDA(FORWARD::render(
 		tile_grid, block,
 		imgState.ranges,
@@ -350,47 +338,39 @@ int CudaRasterizer::Rasterizer::forward(
 		geomState.means2D,
 		feature_ptr,
 		language_feature_ptr,
-		flow_ptr,
-		geomState.depths,
 		geomState.conic_opacity,
 		imgState.accum_alpha,
 		imgState.n_contrib,
 		background,
 		out_color,
-		out_flow,
-		out_depth,
 		out_language_feature,
 		include_feature), debug) // 增加了参数
 
-	CHECK_CUDA(cudaMemcpy(out_T, imgState.accum_alpha, width * height * sizeof(float), cudaMemcpyDeviceToDevice), debug);
+
+	// cudaEventRecord(stop, stream);
+	// cudaEventSynchronize(stop);
+	// float elapsedTime;
+	// cudaEventElapsedTime(&elapsedTime, start, stop);
 	return num_rendered;
 }
 
 // Produce necessary gradients for optimization, corresponding
 // to forward render pass
 void CudaRasterizer::Rasterizer::backward(
-	const int P, int D, int D_t, int M, int R,
+	const int P, int D, int M, int R,
 	const float* background,
 	const int width, int height,
 	const float* means3D,
 	const float* shs,
 	const float* colors_precomp,
 	const float* language_feature_precomp,
-	const float* flows_2d,
-	const float* opacities,
-	const float* ts,
 	const float* scales,
-	const float* scales_t,
 	const float scale_modifier,
 	const float* rotations,
-	const float* rotations_r,
 	const float* cov3D_precomp,
 	const float* viewmatrix,
 	const float* projmatrix,
 	const float* campos,
-	const float timestamp,
-    const float time_duration,
-    const bool rot_4d, const int gaussian_dim, const bool force_sh_3d,
 	const float tan_fovx, float tan_fovy,
 	const int* radii,
 	char* geom_buffer,
@@ -398,9 +378,6 @@ void CudaRasterizer::Rasterizer::backward(
 	char* img_buffer,
 	const float* dL_dpix,
 	const float* dL_dpix_F,
-	const float* dL_depths,
-	const float* dL_masks,
-	const float* dL_dpix_flow,
 	float* dL_dmean2D,
 	float* dL_dconic,
 	float* dL_dopacity,
@@ -409,12 +386,8 @@ void CudaRasterizer::Rasterizer::backward(
 	float* dL_dmean3D,
 	float* dL_dcov3D,
 	float* dL_dsh,
-	float* dL_dflows,
-	float* dL_dts,
 	float* dL_dscale,
-	float* dL_dscale_t,
 	float* dL_drot,
-	float* dL_drot_r,
 	bool debug,
 	bool include_feature)
 {
@@ -438,7 +411,6 @@ void CudaRasterizer::Rasterizer::backward(
 	// If we were given precomputed colors and not SHs, use them.
 	const float* color_ptr = (colors_precomp != nullptr) ? colors_precomp : geomState.rgb;
 	const float* language_feature_ptr = language_feature_precomp;
-	const float* depth_ptr = geomState.depths;
 
 	CHECK_CUDA(BACKWARD::render(
 		tile_grid,
@@ -451,20 +423,14 @@ void CudaRasterizer::Rasterizer::backward(
 		geomState.conic_opacity,
 		color_ptr,
 		language_feature_ptr,
-		depth_ptr,
-		flows_2d,
 		imgState.accum_alpha,
 		imgState.n_contrib,
 		dL_dpix,
 		dL_dpix_F,
-		dL_depths,
-		dL_masks,
-		dL_dpix_flow,
 		(float3*)dL_dmean2D,
 		(float4*)dL_dconic,
 		dL_dopacity,
 		dL_dcolor,
-		dL_dflows,
 		dL_dlanguage_feature,
 		include_feature), debug)
 
@@ -472,18 +438,13 @@ void CudaRasterizer::Rasterizer::backward(
 	// given to us or a scales/rot pair? If precomputed, pass that. If not,
 	// use the one we computed ourselves.
 	const float* cov3D_ptr = (cov3D_precomp != nullptr) ? cov3D_precomp : geomState.cov3D;
-	CHECK_CUDA(BACKWARD::preprocess(P, D, D_t, M,
+	CHECK_CUDA(BACKWARD::preprocess(P, D, M,
 		(float3*)means3D,
 		radii,
 		shs,
-		ts,
-		opacities,
 		geomState.clamped,
-		geomState.tiles_touched,
 		(glm::vec3*)scales,
-		scales_t,
 		(glm::vec4*)rotations,
-		(glm::vec4*)rotations_r,
 		scale_modifier,
 		cov3D_ptr,
 		viewmatrix,
@@ -491,19 +452,12 @@ void CudaRasterizer::Rasterizer::backward(
 		focal_x, focal_y,
 		tan_fovx, tan_fovy,
 		(glm::vec3*)campos,
-		timestamp,
-		time_duration,
-		rot_4d, gaussian_dim, force_sh_3d,
 		(float3*)dL_dmean2D,
 		dL_dconic,
 		(glm::vec3*)dL_dmean3D,
 		dL_dcolor,
 		dL_dcov3D,
-		dL_dsh, 
-		dL_dts,
+		dL_dsh,
 		(glm::vec3*)dL_dscale,
-		dL_dscale_t,
-		(glm::vec4*)dL_drot,
-		(glm::vec4*)dL_drot_r,
-		dL_dopacity), debug)
+		(glm::vec4*)dL_drot), debug)
 }
