@@ -875,11 +875,13 @@ renderCUDA(
 	const float2* __restrict__ points_xy_image,
 	const float4* __restrict__ conic_opacity,
 	const float* __restrict__ colors,
+	const float* __restrict__ language_feature,
 	const float* __restrict__ depths,
 	const float* __restrict__ flows_2d,
 	const float* __restrict__ final_Ts,
 	const uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ dL_dpixels,
+	const float* __restrict__ dL_dpixels_F,
 	const float* __restrict__ dL_depths,
 	const float* __restrict__ dL_masks,
 	const float* __restrict__ dL_dpix_flow,
@@ -887,7 +889,9 @@ renderCUDA(
 	float4* __restrict__ dL_dconic2D,
 	float* __restrict__ dL_dopacity,
 	float* __restrict__ dL_dcolors,
-	float* __restrict__ dL_dflows)
+	float* __restrict__ dL_dflows,
+	float* __restrict__ dL_dlanguage_feature,
+	bool include_feature)
 {
 	// We rasterize again. Compute necessary block info.
 	auto block = cg::this_thread_block();
@@ -912,6 +916,7 @@ renderCUDA(
 	__shared__ float collected_colors[C * BLOCK_SIZE];
 	__shared__ float collected_depths[BLOCK_SIZE];
 	__shared__ float collected_flows[2*BLOCK_SIZE];
+	__shared__ float collected_feature[F * BLOCK_SIZE];
 
 	// In the forward, we stored the final value for T, the
 	// product of all (1 - alpha) factors. 
@@ -942,6 +947,16 @@ renderCUDA(
 		dL_mask = dL_masks[pix_id];
 	}
 
+	float accum_rec_F[F] = {0};
+	float dL_dpixel_F[F] = {0};
+	float last_language_feature[F] = {0};
+
+	if (include_feature) {
+		if (inside)
+			for (int i = 0; i < F; i++)
+				dL_dpixel_F[i] = dL_dpixels_F[i * H * W + pix_id];
+	}
+
 	float last_alpha = 0;
 	float last_color[C] = { 0 };
 	float last_flow[2] = { 0 };
@@ -970,6 +985,8 @@ renderCUDA(
 				collected_colors[i * BLOCK_SIZE + block.thread_rank()] = colors[coll_id * C + i];
 			for (int i = 0; i < 2; i++)
 				collected_flows[i * BLOCK_SIZE + block.thread_rank()] = flows_2d[coll_id * 2 + i];
+			for (int i = 0; i < F; i++)
+				collected_feature[i * BLOCK_SIZE + block.thread_rank()] = language_feature[coll_id * F + i];
 		}
 		block.sync();
 
@@ -1031,6 +1048,22 @@ renderCUDA(
 				// Atomic, since this pixel is just one of potentially
 				// many that were affected by this Gaussian.
 				atomicAdd(&(dL_dflows[global_id * 2 + ch]), dchannel_dcolor * dL_dchannelflow);
+			}
+			
+			if (include_feature) {
+				for (int ch = 0; ch < F; ch++)
+				{
+					const float f = collected_feature[ch * BLOCK_SIZE + j];
+					// Update last color (to be used in the next iteration)
+					accum_rec_F[ch] = last_alpha * last_language_feature[ch] + (1.f - last_alpha) * accum_rec_F[ch];
+					last_language_feature[ch] = f;
+					const float dL_dchannel_F = dL_dpixel_F[ch];
+					dL_dalpha += (f - accum_rec_F[ch]) * dL_dchannel_F;
+					// Update the gradients w.r.t. color of the Gaussian. 
+					// Atomic, since this pixel is just one of potentially
+					// many that were affected by this Gaussian.
+					atomicAdd(&(dL_dlanguage_feature[global_id * F + ch]), dchannel_dcolor * dL_dchannel_F);
+				}
 			}
 
 			// Propagate gradients to per-Gaussian depths
@@ -1177,11 +1210,13 @@ void BACKWARD::render(
 	const float2* means2D,
 	const float4* conic_opacity,
 	const float* colors,
+	const float* language_feature,
 	const float* depths,
 	const float* flows_2d,
 	const float* final_Ts,
 	const uint32_t* n_contrib,
 	const float* dL_dpixels,
+	const float* dL_dpixels_F,
 	const float* dL_depths,
 	const float* dL_masks,
 	const float* dL_dpix_flow,
@@ -1189,9 +1224,11 @@ void BACKWARD::render(
 	float4* dL_dconic2D,
 	float* dL_dopacity,
 	float* dL_dcolors,
-	float* dL_dflows)
+	float* dL_dflows
+	float* dL_dlanguage_feature,
+	bool include_feature)
 {
-	renderCUDA<NUM_CHANNELS> << <grid, block >> >(
+	renderCUDA<NUM_CHANNELS, NUM_CHANNELS_language_feature> << <grid, block >> >(
 		ranges,
 		point_list,
 		W, H,
@@ -1199,11 +1236,13 @@ void BACKWARD::render(
 		means2D,
 		conic_opacity,
 		colors,
+		language_feature,
 		depths,
 		flows_2d,
 		final_Ts,
 		n_contrib,
 		dL_dpixels,
+		dL_dpixels_F,
 		dL_depths,
 		dL_masks,
 		dL_dpix_flow,
@@ -1211,6 +1250,7 @@ void BACKWARD::render(
 		dL_dconic2D,
 		dL_dopacity,
 		dL_dcolors,
-		dL_dflows
-		);
+		dL_dflows,
+		dL_dlanguage_feature,
+		include_feature);
 }
