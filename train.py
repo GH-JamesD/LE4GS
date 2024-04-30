@@ -52,6 +52,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
+        breakpoint()
         gaussians.restore(model_params, opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -109,13 +110,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gt_image = gt_image.cuda()
                 viewpoint_cam = viewpoint_cam.cuda()
 
-                render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-                image, language_feature, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["language_feature_image"] render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+                render_pkg = render(viewpoint_cam, gaussians, pipe, background, opt)
+                image, language_feature, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["language_feature_image"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
                 depth = render_pkg["depth"]
                 alpha = render_pkg["alpha"]
 
                 # Loss
                 if (opt.include_feature):
+                    print("im here")
                     gt_language_feature, language_feature_mask = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level)
                     Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)            
                     loss = Ll1

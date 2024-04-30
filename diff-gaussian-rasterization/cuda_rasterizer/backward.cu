@@ -951,6 +951,7 @@ renderCUDA(
 	float dL_dpixel_F[F] = {0};
 	float last_language_feature[F] = {0};
 
+
 	if (include_feature) {
 		if (inside)
 			for (int i = 0; i < F; i++)
@@ -985,11 +986,15 @@ renderCUDA(
 				collected_colors[i * BLOCK_SIZE + block.thread_rank()] = colors[coll_id * C + i];
 			for (int i = 0; i < 2; i++)
 				collected_flows[i * BLOCK_SIZE + block.thread_rank()] = flows_2d[coll_id * 2 + i];
-			for (int i = 0; i < F; i++)
-				collected_feature[i * BLOCK_SIZE + block.thread_rank()] = language_feature[coll_id * F + i];
+			if (!include_feature) { // NOTE modified by karim
+				for (int i = 0; i < F; i++)
+					collected_feature[i * BLOCK_SIZE + block.thread_rank()] = language_feature[coll_id * F + i];
+			} else {
+				for (int i = 0; i < F; i++)
+					collected_feature[i * BLOCK_SIZE + block.thread_rank()] = 0;
+			}
 		}
 		block.sync();
-
 		// Iterate over Gaussians
 		for (int j = 0; !done && j < min(BLOCK_SIZE, toDo); j++)
 		{
@@ -1006,7 +1011,6 @@ renderCUDA(
 			const float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) - con_o.y * d.x * d.y;
 			if (power > 0.0f)
 				continue;
-
 			const float G = exp(power);
 			const float alpha = min(0.99f, con_o.w * G);
 			if (alpha < 1.0f / 255.0f)
@@ -1062,7 +1066,12 @@ renderCUDA(
 					// Update the gradients w.r.t. color of the Gaussian. 
 					// Atomic, since this pixel is just one of potentially
 					// many that were affected by this Gaussian.
-					atomicAdd(&(dL_dlanguage_feature[global_id * F + ch]), dchannel_dcolor * dL_dchannel_F);
+					if (include_feature) { //NOTE: commented out by karim
+						atomicAdd(&(dL_dlanguage_feature[global_id * F + ch]), dchannel_dcolor * dL_dchannel_F); 
+					} 
+					// else {
+						// atomicAdd(0, dchannel_dcolor * dL_dchannel_F); 
+					// }
 				}
 			}
 

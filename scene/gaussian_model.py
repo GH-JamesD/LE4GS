@@ -183,7 +183,7 @@ class GaussianModel:
             self._scaling, 
             self._rotation, 
             self._opacity,
-            self._language_feature,
+            # self._language_feature,
             self.max_radii2D, 
             xyz_gradient_accum, 
             denom,
@@ -197,7 +197,7 @@ class GaussianModel:
             self._scaling, 
             self._rotation, 
             self._opacity,
-            self._language_feature,
+            # self._language_feature,
             self.max_radii2D, 
             xyz_gradient_accum, 
             t_gradient_accum,
@@ -215,8 +215,9 @@ class GaussianModel:
             self.xyz_gradient_accum = xyz_gradient_accum
             self.t_gradient_accum = t_gradient_accum
             self.denom = denom
-            self.optimizer.load_state_dict(opt_dict)
-
+            if not training_args.include_feature:
+                self.optimizer.load_state_dict(opt_dict)
+        self._language_feature=None # NOTE put it here cause we're loading a model that doesnt have language features (was trained on 4dgs repo)
 
     @property
     def get_language_feature(self):
