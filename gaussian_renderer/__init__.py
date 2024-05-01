@@ -116,6 +116,11 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         colors_precomp = override_color
 
     if opt.include_feature:
+        # gaussian_lang_feat = pc.get_language_feature # NOTE when loading 4dgs checkpoint it doesn't have a lang feat
+        # if gaussian_lang_feat is not None:
+        #     language_feature_precomp = pc.get_language_feature
+        # else:
+        #     language_feature_precomp = viewpoint_camera.get_language_feature
         language_feature_precomp = pc.get_language_feature
         language_feature_precomp = language_feature_precomp/ (language_feature_precomp.norm(dim=-1, keepdim=True) + 1e-9)
         # language_feature_precomp = torch.sigmoid(language_feature_precomp)

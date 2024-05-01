@@ -576,10 +576,14 @@ __global__ void computeCov2DCUDA(int P,
 	// t = transformPoint4x3(mean, view_matrix);
 	float3 dL_dmean = transformVec4x3Transpose({ dL_dtx, dL_dty, dL_dtz+dL_dmean2D[idx].z }, view_matrix);
 
+	// printf("This is hopefully the gradient of mean %f\n", dL_dmean);
 	// Gradients of loss w.r.t. Gaussian means, but only the portion 
 	// that is caused because the mean affects the covariance matrix.
 	// Additional mean gradient is accumulated in BACKWARD::preprocess.
 	dL_dmeans[idx] = dL_dmean;
+
+	// printf("This is hopefully the gradient of time %f\n", dL_dmean);
+	
 }
 
 // Backward pass for the conversion of scale and rotation to a 
@@ -731,7 +735,7 @@ __device__ void computeCov3D_conditional(int idx, const glm::vec3 scale, const f
     dL_dcovt += -dL_ddeltamean_dot_cov12 / (cov_t*cov_t) * dt;
     dL_dt += -dL_ddeltamean_dot_cov12 / cov_t;
     dL_dts[idx] += dL_dt;
-
+	// printf("This is hopefully the gradient of time %f\n", dL_dt);
     glm::mat4 dL_dSigma = glm::mat4(
 		dL_dcov3D[0], 0.5f * dL_dcov3D[1], 0.5f * dL_dcov3D[2], 0.5f * dL_dcov12[0],
 		0.5f * dL_dcov3D[1], dL_dcov3D[3], 0.5f * dL_dcov3D[4], 0.5f * dL_dcov12[1],

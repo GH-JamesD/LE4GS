@@ -29,6 +29,7 @@ namespace cg = cooperative_groups;
 #include "auxiliary.h"
 #include "forward.h"
 #include "backward.h"
+#include <stdio.h>
 
 // Helper function to find the next-highest bit of the MSB
 // on the CPU.
@@ -418,6 +419,8 @@ void CudaRasterizer::Rasterizer::backward(
 	bool debug,
 	bool include_feature)
 {
+
+
 	GeometryState geomState = GeometryState::fromChunk(geom_buffer, P);
 	BinningState binningState = BinningState::fromChunk(binning_buffer, R);
 	ImageState imgState = ImageState::fromChunk(img_buffer, width * height);

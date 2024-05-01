@@ -217,7 +217,7 @@ class GaussianModel:
             self.denom = denom
             if not training_args.include_feature:
                 self.optimizer.load_state_dict(opt_dict)
-        self._language_feature=None # NOTE put it here cause we're loading a model that doesnt have language features (was trained on 4dgs repo)
+        # NOTE put it here cause we're loading a model that doesnt have language features (was trained on 4dgs repo)
 
     @property
     def get_language_feature(self):
