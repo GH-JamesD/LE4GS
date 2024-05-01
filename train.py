@@ -237,7 +237,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     if test_psnr >= best_psnr:
                         best_psnr = test_psnr
                         print("\n[ITER {}] Saving best checkpoint".format(iteration))
-                        torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt_best_le4gs.pth")
+                        torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt_best_le4gs1.pth")
                         
                 if (iteration in saving_iterations):
                     print("\n[ITER {}] Saving Gaussians".format(iteration))
@@ -421,3 +421,6 @@ if __name__ == "__main__":
 
     # All done
     print("\nTraining complete.")
+
+    # Command used for successful training of le4gs
+    # python train.py --config configs/dnerf_le4gs/bouncingballs.yaml --start_checkpoint output/dnerf/bouncingballs_new/chkpnt_best.pth --feature_level 1
