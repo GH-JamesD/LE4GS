@@ -389,16 +389,16 @@ class GaussianModel:
             l = [
                 {'params': [self._language_feature], 'lr': training_args.language_feature_lr, "name": "language_feature"}, # TODO: training_args.language_feature_lr
             ]
-            self._xyz.requires_grad_(False)
-            self._features_dc.requires_grad_(False)
-            self._features_rest.requires_grad_(False)
-            self._scaling.requires_grad_(False)
-            self._rotation.requires_grad_(False)
-            self._opacity.requires_grad_(False)
+            self._xyz.requires_grad_(True)
+            self._features_dc.requires_grad_(True)
+            self._features_rest.requires_grad_(True)
+            self._scaling.requires_grad_(True)
+            self._rotation.requires_grad_(True)
+            self._opacity.requires_grad_(True)
 
             if self.gaussian_dim == 4:
-                self._t.requires_grad_(False)
-                self._scaling_t.requires_grad_(False)
+                self._t.requires_grad_(True)
+                self._scaling_t.requires_grad_(True)
                 if self.rot_4d:
                     self._rotation_r.requires_grad_(False)
 

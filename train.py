@@ -46,7 +46,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     scene = Scene(dataset, gaussians, num_pts=num_pts, num_pts_ratio=num_pts_ratio, time_duration=time_duration)
     gaussians.training_setup(opt)
     
-
     if opt.include_feature:
         if not checkpoint:
             raise ValueError("checkpoint missing!!!!!")
@@ -124,7 +123,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     # gt_language_feature, language_feature_mask = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level)
                     Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)            
                     loss = Ll1
-                    Lssim = 1.0 - ssim(image, gt_image)
+                    Lssim = 1.0 - ssim(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)
+                    # print(loss, Lssim)
+                    print(loss)
                 else:
                     Ll1 = l1_loss(image, gt_image)
                     Lssim = 1.0 - ssim(image, gt_image)
@@ -154,13 +155,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                                     k)
                     _, velocity = gaussians.get_current_covariance_and_mean_offset(1.0, gaussians.get_t + 0.1)
                     weight = torch.exp(-100 * dist)
-                    # cur_marginal_t = gaussians.get_marginal_t(cur_time).detach().squeeze(-1)
-                    # marginal_weights = cur_marginal_t[idx] * cur_marginal_t[None,:,None]
-                    # weight *= marginal_weights
+                    cur_marginal_t = gaussians.get_marginal_t(cur_time).detach().squeeze(-1)
+                    marginal_weights = cur_marginal_t[idx] * cur_marginal_t[None,:,None]
+                    weight *= marginal_weights
                     
-                    # mean_t, cov_t = gaussians.get_t, gaussians.get_cov_t(scaling_modifier=1)
-                    # mean_t_nn, cov_t_nn = mean_t[idx], cov_t[idx]
-                    # weight *= torch.exp(-0.5*(mean_t[None, :, None]-mean_t_nn)**2/cov_t[None, :, None]/cov_t_nn*(cov_t[None, :, None]+cov_t_nn)).squeeze(-1).detach()
+                    mean_t, cov_t = gaussians.get_t, gaussians.get_cov_t(scaling_modifier=1)
+                    mean_t_nn, cov_t_nn = mean_t[idx], cov_t[idx]
+                    weight *= torch.exp(-0.5*(mean_t[None, :, None]-mean_t_nn)**2/cov_t[None, :, None]/cov_t_nn*(cov_t[None, :, None]+cov_t_nn)).squeeze(-1).detach()
                     vel_dist = torch.norm(velocity[idx] - velocity[None, :, None], p=2, dim=-1)
                     Lrigid = (weight * vel_dist).sum() / k / xyz_cur.shape[0]
                     loss = loss + opt.lambda_rigid * Lrigid
@@ -195,13 +196,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             else:
                 if gaussians.gaussian_dim == 4:
                     # NOTE no _t
-                    pass
-                    # batch_t_grad = gaussians._t.grad.clone().detach()
+                    # pass
+                    batch_t_grad = gaussians._t.grad.clone().detach()
             
             iter_end.record()
             loss_dict = {"Ll1": Ll1,
                         "Lssim": Lssim}
-
+            
             with torch.no_grad():
                 psnr_for_log = psnr(image, gt_image).mean().double()
                 # Progress bar
@@ -244,7 +245,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     scene.save(iteration)
 
                 # Densification
-                if iteration < opt.densify_until_iter and (opt.densify_until_num_points < 0 or gaussians.get_xyz.shape[0] < opt.densify_until_num_points):
+                if  gaussians._language_feature == None and iteration < opt.densify_until_iter and (opt.densify_until_num_points < 0 or gaussians.get_xyz.shape[0] < opt.densify_until_num_points):
                     # Keep track of max radii in image-space for pruning
                     gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                     # NOTE NO _t
@@ -262,6 +263,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                         
                 # Optimizer step
                 if iteration < opt.iterations:
+                    # breakpoint()
                     gaussians.optimizer.step()
                     gaussians.optimizer.zero_grad(set_to_none = True)
                     if pipe.env_map_res and iteration < pipe.env_optimize_until:
